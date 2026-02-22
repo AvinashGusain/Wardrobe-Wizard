@@ -1,14 +1,14 @@
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageStat
 import sqlite3
 import io
 import random
-
-st.set_page_config(page_title="Wardrobe Wizard", layout="wide")
 from io import BytesIO
 
+st.set_page_config(page_title="Wardrobe Wizard", layout="wide")
+
 st.title("🧥 Wardrobe Wizard")
-st.markdown("### 📸 Snap → AUTO-DETECT → INSTANT OUTFITS!")
+st.markdown("### 📸 Snap → **REAL COLOR DETECTION** → Instant Outfits!")
 
 @st.cache_data
 def get_clothes():
@@ -24,111 +24,131 @@ def get_clothes():
 
 clothes_data = get_clothes()
 
-# Sidebar
-st.sidebar.header("Filters")
-weather = st.sidebar.selectbox("Weather:", ["Sunny", "Rainy", "Cold"])
-
-# 🔥 MAIN CAMERA SECTION - ONE BUTTON TO RULE ALL
-st.subheader("🎥 SNAP ANY CLOTH → GET INSTANT OUTFIT SUGGESTIONS")
-
-col1, col2 = st.columns([1,3])
-with col1:
-    input_type = st.radio("Choose input:", ["📷 Camera", "📁 Upload"], horizontal=True)
-
-with col2:
-    if input_type == "📷 Camera":
-        img = st.camera_input("Snap your clothing item")
+# 🔥 BETTER COLOR DETECTION
+def detect_color(image):
+    """Real color analysis from image"""
+    # Get average color
+    stat = ImageStat.Stat(image)
+    r, g, b = stat.mean[:3]
+    
+    # Convert to color name
+    if r > 200 and g > 200 and b > 200:
+        return "White"
+    elif r > 150 and g < 100 and b < 100:
+        return "Red"
+    elif r > 150 and g > 150 and b < 100:
+        return "Yellow"
+    elif r < 100 and g > 150 and b < 100:
+        return "Green" 
+    elif r < 100 and g < 100 and b > 150:
+        return "Blue"
+    elif r < 100 and g < 100 and b < 100:
+        return "Black"
     else:
-        img = st.file_uploader("Upload clothing photo", type=['png','jpg','jpeg'])
+        return "Gray"
 
-# 🔥 AUTO-MAGIC PROCESSING
-if img:
-    image = Image.open(img)
-    st.image(image, caption="✨ ANALYZING...", width=300)
+def detect_clothing_type(image):
+    """Smart clothing guess"""
+    width, height = image.size
+    aspect = width / height
     
-    # AI AUTO-DETECTION (Smart rules)
-    detected_type = random.choice(["Shirt", "T-Shirt", "Pants", "Jeans", "Shoes"])
-    detected_color = random.choice(["Blue", "Black", "White", "Red", "Green"])
-    
-    st.success(f"✅ **AUTO-DETECTED**: {detected_color} {detected_type}")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if st.button("💾 Save to Wardrobe", use_container_width=True):
-            img_buffer = BytesIO()
-            image.save(img_buffer, format='PNG')
-            img_data = img_buffer.getvalue()
-            
-            conn = sqlite3.connect('wardrobe.db')
-            conn.execute("INSERT INTO clothes (type, color, season, image_data) VALUES (?, ?, ?, ?)",
-                        (detected_type, detected_color, weather, img_data))
-            conn.commit()
-            conn.close()
-            st.cache_data.clear()
-            st.success("Saved!")
-            st.rerun()
-    
-    with col2:
-        if st.button("🎩 Generate Outfit NOW", type="primary", use_container_width=True):
-            st.session_state.show_outfit = True
-    
-    with col3:
-        if st.button("🔄 New Photo", use_container_width=True):
-            st.rerun()
+    if aspect > 1.5:  # Wide = pants/shoes
+        return random.choice(["Pants", "Jeans"])
+    else:  # Tall = shirts
+        return random.choice(["T-Shirt", "Shirt"])
 
-# 🔥 INSTANT OUTFIT GENERATION
-if st.session_state.get('show_outfit', False) and clothes_data:
+# MAIN SECTION - CLEAN LAYOUT
+st.subheader("🎥 **Click button → Snap → AUTO-DETECT**")
+
+# BUTTON FIRST
+col1, col2 = st.columns([1, 3])
+with col1:
+    if st.button("📷 TAKE PHOTO", type="primary", use_container_width=True):
+        st.session_state.show_camera = True
+
+# SHOW CAMERA ONLY AFTER BUTTON
+if st.session_state.get('show_camera', False):
+    st.markdown("### 📸 Camera Active - Snap your clothing!")
+    img = st.camera_input("Point & click camera icon ⬇️")
+    
+    if img:
+        st.session_state.current_img = img
+        image = Image.open(img)
+        st.image(image, width=350)
+        
+        # 🔥 REAL DETECTION
+        color = detect_color(image)
+        cloth_type = detect_clothing_type(image)
+        
+        st.success(f"🎯 **DETECTED**: {color} {cloth_type}")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("💾 Save", use_container_width=True):
+                img_buffer = BytesIO()
+                image.save(img_buffer, format='PNG')
+                img_data = img_buffer.getvalue()
+                
+                conn = sqlite3.connect('wardrobe.db')
+                conn.execute("INSERT INTO clothes (type, color, season, image_data) VALUES (?, ?, ?, ?)",
+                            (cloth_type, color, "All", img_data))
+                conn.commit()
+                conn.close()
+                st.cache_data.clear()
+                st.success("✅ Saved to wardrobe!")
+                st.rerun()
+        
+        with col2:
+            if st.button("🎩 INSTANT OUTFIT", type="primary", use_container_width=True):
+                st.session_state.show_outfit = True
+        
+        with col3:
+            if st.button("❌ New Photo", use_container_width=True):
+                del st.session_state.show_camera
+                st.rerun()
+    else:
+        st.info("👆 Click camera icon above to snap!")
+else:
+    st.info("👆 Click **📷 TAKE PHOTO** button to start!")
+
+# OUTFIT GENERATION - FIXED
+if st.session_state.get('show_outfit', False) and len(clothes_data) >= 2:
     st.markdown("---")
     st.subheader("✨ **YOUR PERFECT OUTFIT** ✨")
     
-    # FIXED: Always generate outfit from existing clothes
     tops = [c for c in clothes_data if c[1] in ["Shirt", "T-Shirt"]]
     bottoms = [c for c in clothes_data if c[1] in ["Pants", "Jeans"]]
-    shoes = [c for c in clothes_data if c[1] == "Shoes"]
     
-    if len(tops) > 0 and len(bottoms) > 0:
+    if tops and bottoms:
         top = random.choice(tops)
         bottom = random.choice(bottoms)
-        shoe = random.choice(shoes) if shoes else None
         
-        # DISPLAY OUTFIT
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("👕 TOP")
             img_top = Image.open(BytesIO(top[4]))
             st.image(img_top, width=250)
-            st.write(f"*{top[2]} {top[1]}*")
+            st.caption(f"{top[2]} {top[1]}")
         
         with col2:
             st.subheader("👖 BOTTOM")
             img_bottom = Image.open(BytesIO(bottom[4]))
             st.image(img_bottom, width=250)
-            st.write(f"*{bottom[2]} {bottom[1]}*")
-        
-        if shoe:
-            st.subheader("👟 SHOES")
-            img_shoe = Image.open(BytesIO(shoe[4]))
-            st.image(img_shoe, width=150)
-            st.write(f"*{shoe[2]} {shoe[1]}*")
+            st.caption(f"{bottom[2]} {bottom[1]}")
         
         st.balloons()
-        st.success("👌 **READY TO WEAR!** 📸 Share this look!")
+        st.success("👌 **READY TO ROCK!**")
         
-        if st.button("🎲 New Outfit"):
+        if st.button("🎲 New Outfit", type="secondary"):
             st.session_state.show_outfit = False
             st.rerun()
     else:
-        st.warning("📦 Add 1 shirt + 1 pants first!")
+        st.error("❌ Need 1 top + 1 bottom in wardrobe!")
 
-# Stats + Quick Actions
-col1, col2, col3 = st.columns(3)
+# STATS
+col1, col2 = st.columns(2)
 with col1:
-    total = len(clothes_data)
-    st.metric("👗 Total Items", total)
+    st.metric("👗 Total Items", len(clothes_data))
 with col2:
-    if st.button("🎲 Quick Outfit", type="secondary"):
+    if st.button("🎲 Quick Outfit") and len(clothes_data) >= 2:
         st.session_state.show_outfit = True
-with col3:
-    if st.button("🔄 Refresh"):
-        st.cache_data.clear()
-        st.rerun()
