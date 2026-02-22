@@ -3,20 +3,17 @@ from PIL import Image
 import sqlite3
 import io
 import random
-import os
 
-# MUST BE FIRST STREAMLIT COMMAND
+# MUST BE FIRST
 st.set_page_config(page_title="Wardrobe Wizard", layout="wide")
 
 from io import BytesIO
 
 st.title("🧥 Wardrobe Wizard")
-st.markdown("### Snap your clothes → Get perfect outfits instantly!")
+st.markdown("### 📸 SNAP your clothes → Get perfect outfits instantly!")
 
-# NO CACHING - Create connection fresh each time
 @st.cache_data
 def get_clothes():
-    """Get all clothes data (serializable)"""
     conn = sqlite3.connect('wardrobe.db')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS clothes 
@@ -27,20 +24,21 @@ def get_clothes():
     conn.close()
     return clothes
 
-# Get clothes data
 clothes_data = get_clothes()
 
-# Sidebar filters
+# Sidebar
 st.sidebar.header("Filters")
 outfit_type = st.sidebar.selectbox("Outfit type:", ["Work", "Casual", "Party", "Gym"])
 weather = st.sidebar.selectbox("Weather:", ["Sunny", "Rainy", "Cold"])
 
 # Tabs
-tab1, tab2 = st.tabs(["➕ Add Clothes", "🎩 Get Outfit"])
+tab1, tab2 = st.tabs(["📷 CAMERA (NEW!)", "🎩 Get Outfit"])
 
 with tab1:
-    st.subheader("📸 Add new clothing item")
-    uploaded_file = st.file_uploader("Choose image", type=['png','jpg','jpeg'])
+    st.subheader("🎥 Live Camera - Snap Your Clothes!")
+    
+    # 🔥 CAMERA INPUT
+    camera_img = st.camera_input("Point at your clothing item")
     
     col1, col2 = st.columns([3,1])
     with col1:
@@ -48,30 +46,52 @@ with tab1:
         color = st.text_input("Color (e.g., Blue, Black):")
         season = st.selectbox("Season:", ["Summer", "Winter", "All"])
     
-    if uploaded_file and color and st.button("✅ Save to Wardrobe"):
-        # Convert image to binary
-        image = Image.open(uploaded_file)
-        img_buffer = BytesIO()
-        image.save(img_buffer, format='PNG')
-        img_data = img_buffer.getvalue()
+    # Show captured image
+    if camera_img:
+        image = Image.open(camera_img)
+        st.image(image, caption="✅ Captured!", width=300)
         
-        # Direct DB write (no cache)
-        conn = sqlite3.connect('wardrobe.db')
-        conn.execute("INSERT INTO clothes (type, color, season, image_data) VALUES (?, ?, ?, ?)",
-                    (cloth_type, color, season, img_data))
-        conn.commit()
-        conn.close()
-        
-        st.success("🎉 Added to wardrobe!")
-        st.rerun()
-        # Clear cache to refresh data
-        st.cache_data.clear()
+        if color and st.button("✅ Save to Wardrobe", type="primary"):
+            # Save camera image to DB
+            img_buffer = BytesIO()
+            image.save(img_buffer, format='PNG')
+            img_data = img_buffer.getvalue()
+            
+            conn = sqlite3.connect('wardrobe.db')
+            conn.execute("INSERT INTO clothes (type, color, season, image_data) VALUES (?, ?, ?, ?)",
+                        (cloth_type, color, season, img_data))
+            conn.commit()
+            conn.close()
+            
+            st.success("🎉 Added to wardrobe!")
+            st.balloons()
+            st.cache_data.clear()
+            st.rerun()
+    
+    # Fallback: file upload
+    else:
+        st.info("👆 Click camera above OR drag image file below")
+        uploaded_file = st.file_uploader("📁 Or upload photo", type=['png','jpg','jpeg'])
+        if uploaded_file and color and st.button("✅ Save from Upload"):
+            image = Image.open(uploaded_file)
+            img_buffer = BytesIO()
+            image.save(img_buffer, format='PNG')
+            img_data = img_buffer.getvalue()
+            
+            conn = sqlite3.connect('wardrobe.db')
+            conn.execute("INSERT INTO clothes (type, color, season, image_data) VALUES (?, ?, ?, ?)",
+                        (cloth_type, color, season, img_data))
+            conn.commit()
+            conn.close()
+            
+            st.success("🎉 Added to wardrobe!")
+            st.cache_data.clear()
+            st.rerun()
 
 with tab2:
     st.subheader("✨ Generate Perfect Outfit")
     
     if st.button("🎲 Get Random Outfit", type="primary") and clothes_data:
-        # Filter from cached data
         tops = [c for c in clothes_data if c[1] in ["Shirt", "T-Shirt"]]
         bottoms = [c for c in clothes_data if c[1] in ["Pants", "Jeans"]]
         
@@ -99,6 +119,6 @@ with tab2:
 total = len(clothes_data)
 st.metric("Total Items", total)
 
-if st.button("🔄 Refresh Wardrobe"):
+if st.button("🔄 Refresh"):
     st.cache_data.clear()
     st.rerun()
