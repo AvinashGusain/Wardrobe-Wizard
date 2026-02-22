@@ -10,7 +10,7 @@ jobs:
     steps:
     - name: Ping App
       run: |
-        RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" https://yourapp.streamlit.app/)
+        RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" https://wardrobe-wizard-gy9mfeibpvq9p385rkzjvp.streamlit.app/)
         echo "HTTP Status: $RESPONSE"
         if [ "$RESPONSE" = "200" ]; then
           echo "✅ Wardrobe Wizard is awake!"
